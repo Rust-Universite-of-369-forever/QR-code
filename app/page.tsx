@@ -1,8 +1,15 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Download, Copy, RefreshCw, Palette } from 'lucide-react';
+
+declare global {
+  interface Window {
+    yaContextCb: (() => void)[];
+    Ya: any;
+  }
+}
 
 export default function QRGenerator() {
   const [value, setValue] = useState('');
@@ -13,60 +20,8 @@ export default function QRGenerator() {
   const [includeMargin, setIncludeMargin] = useState(true);
 
   const qrRef = useRef<HTMLDivElement>(null);
-
-  // Скачивание PNG
-  // Скачивание PNG (работает с QRCodeSVG)
-// Скачивание PNG (исправленная версия)
-const downloadPNG = async () => {
-  if (!value || !qrRef.current) return;
-
-  try {
-    // Импортируем html2canvas динамически
-    const html2canvas = (await import('html2canvas')).default;
-
-    // Находим SVG элемент внутри рефа
-    const svgElement = qrRef.current.querySelector('svg');
-    if (!svgElement) {
-      alert('QR-код не найден');
-      return;
-    }
-
-    // Создаём обёртку с фоном, чтобы сохранить стили
-    const wrapper = document.createElement('div');
-    wrapper.style.backgroundColor = bgColor;
-    wrapper.style.display = 'inline-block';
-    wrapper.style.padding = includeMargin ? '20px' : '0px';
-    wrapper.style.borderRadius = '16px';
-    
-    // Клонируем SVG, чтобы не влиять на оригинал
-    const clonedSvg = svgElement.cloneNode(true) as SVGElement;
-    wrapper.appendChild(clonedSvg);
-    
-    // Временно добавляем в DOM для рендеринга
-    document.body.appendChild(wrapper);
-    
-    // Рендерим в canvas
-    const canvas = await html2canvas(wrapper, {
-      scale: 3,                    // высокое качество
-      backgroundColor: bgColor,
-      logging: false,
-      useCORS: true,
-    });
-    
-    // Удаляем временный элемент
-    document.body.removeChild(wrapper);
-    
-    // Скачиваем
-    const link = document.createElement('a');
-    link.download = `qr-code-${Date.now()}.png`;
-    link.href = canvas.toDataURL('image/png', 1.0);
-    link.click();
-    
-  } catch (err) {
-    console.error('Ошибка при создании PNG:', err);
-    alert('Ошибка при создании PNG. Попробуй использовать кнопку SVG.');
-  }
-};
+  const adContainerRef = useRef<HTMLDivElement>(null);
+  const scriptLoaded = useRef(false);
 
   // Скачивание SVG
   const downloadSVG = () => {
@@ -76,21 +31,14 @@ const downloadPNG = async () => {
 
     const serializer = new XMLSerializer();
     let svgString = serializer.serializeToString(svg);
-
-    // Добавляем белый фон
-    svgString = svgString.replace(
-      '<svg',
-      `<svg style="background-color: ${bgColor}"`
-    );
+    svgString = svgString.replace('<svg', `<svg style="background-color: ${bgColor}"`);
 
     const blob = new Blob([svgString], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
-    
     const link = document.createElement('a');
     link.download = `qr-code-${Date.now()}.svg`;
-    link.href = url
+    link.href = url;
     link.click();
-    
     URL.revokeObjectURL(url);
   };
 
@@ -99,6 +47,52 @@ const downloadPNG = async () => {
     await navigator.clipboard.writeText(value);
     alert('Текст скопирован в буфер обмена!');
   };
+
+  // Загрузка рекламы (исправленная версия)
+  useEffect(() => {
+    // Если скрипт уже загружен — не загружаем повторно
+    if (scriptLoaded.current) return;
+    scriptLoaded.current = true;
+
+    // Инициализируем callback-массив
+    window.yaContextCb = window.yaContextCb || [];
+
+    // Загружаем скрипт Яндекса
+    const script = document.createElement('script');
+    script.src = 'https://yandex.ru/ads/system/context.js';
+    script.async = true;
+    document.body.appendChild(script);
+
+    // Функция рендера рекламы
+    const renderAd = () => {
+      if (window.Ya?.Context?.AdvManager && adContainerRef.current) {
+        try {
+          window.Ya.Context.AdvManager.render({
+            blockId: "R-A-19074412-1",
+            renderTo: adContainerRef.current,
+            async: true
+          });
+        } catch (e) {
+          console.error('Ошибка рендера рекламы:', e);
+        }
+      }
+    };
+
+    // Если Ya уже загружен — рендерим сразу
+    if (window.Ya?.Context?.AdvManager) {
+      renderAd();
+    } else {
+      // Иначе добавляем в коллбек
+      window.yaContextCb.push(renderAd);
+    }
+
+    // Очистка при размонтировании
+    return () => {
+      if (adContainerRef.current) {
+        adContainerRef.current.innerHTML = '';
+      }
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 to-zinc-900 text-white py-12 px-4">
@@ -240,16 +234,8 @@ const downloadPNG = async () => {
             {value && (
               <div className="mt-8 flex gap-4">
                 <button
-                  onClick={downloadPNG}
-                  className="flex-1 flex items-center justify-center gap-3 bg-white text-black font-semibold py-4 rounded-2xl hover:bg-zinc-200 transition-colors"
-                >
-                  <Download size={20} />
-                  Скачать PNG
-                </button>
-                
-                <button
                   onClick={downloadSVG}
-                  className="flex-1 flex items-center justify-center gap-3 bg-zinc-800 font-semibold py-4 rounded-2xl hover:bg-zinc-700 transition-colors border border-zinc-700"
+                  className="flex-1 flex items-center justify-center gap-3 bg-white text-black font-semibold py-4 rounded-2xl hover:bg-zinc-200 transition-colors"
                 >
                   <Download size={20} />
                   Скачать SVG
@@ -259,11 +245,13 @@ const downloadPNG = async () => {
           </div>
         </div>
 
-        {/* Место для рекламного баннера (горизонтальный) */}
-        <div className="mt-12 bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 text-center text-zinc-500 text-sm">
-          Здесь будет рекламный баннер (AdSense / Raptive / Ezoic и т.д.)
-          <br />
-          <span className="text-xs mt-2 block">Реклама помогает проекту оставаться бесплатным для всех</span>
+        {/* Рекламный баннер — исправленный */}
+        <div className="mt-12 bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 text-center">
+          <div 
+            ref={adContainerRef}
+            className="flex justify-center items-center min-h-[90px]"
+          />
+          <p className="text-zinc-500 text-xs mt-3">Реклама</p>
         </div>
       </div>
     </div>
