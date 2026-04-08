@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Download, Copy, RefreshCw, Palette } from 'lucide-react';
+import { Download, Copy, RefreshCw, Palette, Mail, Phone, Wifi, MessageCircle, Link2, Type } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -11,8 +11,30 @@ declare global {
   }
 }
 
+type DataType = 'text' | 'url' | 'email' | 'phone' | 'sms' | 'wifi';
+
+interface WifiConfig {
+  ssid: string;
+  password: string;
+  encryption: 'WPA' | 'WEP' | 'nopass';
+}
+
 export default function QRGenerator() {
-  const [value, setValue] = useState('');
+  const [dataType, setDataType] = useState<DataType>('url');
+  const [textValue, setTextValue] = useState('');
+  const [urlValue, setUrlValue] = useState('');
+  const [emailValue, setEmailValue] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+  const [phoneValue, setPhoneValue] = useState('');
+  const [smsNumber, setSmsNumber] = useState('');
+  const [smsMessage, setSmsMessage] = useState('');
+  const [wifiConfig, setWifiConfig] = useState<WifiConfig>({
+    ssid: '',
+    password: '',
+    encryption: 'WPA'
+  });
+  
   const [fgColor, setFgColor] = useState('#000000');
   const [bgColor, setBgColor] = useState('#ffffff');
   const [size, setSize] = useState(280);
@@ -23,9 +45,46 @@ export default function QRGenerator() {
   const adContainerRef = useRef<HTMLDivElement>(null);
   const scriptLoaded = useRef(false);
 
+  // Генерация значения для QR-кода на основе выбранного типа
+  const getQRValue = () => {
+    switch (dataType) {
+      case 'text':
+        return textValue;
+      case 'url':
+        return urlValue;
+      case 'email':
+        if (!emailValue) return '';
+        let emailStr = `mailto:${emailValue}`;
+        if (emailSubject || emailBody) {
+          emailStr += '?';
+          if (emailSubject) emailStr += `subject=${encodeURIComponent(emailSubject)}`;
+          if (emailSubject && emailBody) emailStr += '&';
+          if (emailBody) emailStr += `body=${encodeURIComponent(emailBody)}`;
+        }
+        return emailStr;
+      case 'phone':
+        return phoneValue ? `tel:${phoneValue}` : '';
+      case 'sms':
+        if (!smsNumber) return '';
+        let smsStr = `sms:${smsNumber}`;
+        if (smsMessage) smsStr += `?body=${encodeURIComponent(smsMessage)}`;
+        return smsStr;
+      case 'wifi':
+        if (!wifiConfig.ssid) return '';
+        const auth = wifiConfig.encryption === 'nopass' ? 'nopass' : wifiConfig.encryption;
+        const passwordPart = wifiConfig.encryption !== 'nopass' && wifiConfig.password ? `:${wifiConfig.password}` : '';
+        return `WIFI:T:${auth};S:${wifiConfig.ssid};${passwordPart};;`;
+      default:
+        return '';
+    }
+  };
+
+  const qrValue = getQRValue();
+  const hasValue = qrValue !== '';
+
   // Скачивание SVG
   const downloadSVG = () => {
-    if (!value) return;
+    if (!hasValue) return;
     const svg = qrRef.current?.querySelector('svg');
     if (!svg) return;
 
@@ -43,27 +102,37 @@ export default function QRGenerator() {
   };
 
   const copyToClipboard = async () => {
-    if (!value) return;
-    await navigator.clipboard.writeText(value);
-    alert('Текст скопирован в буфер обмена!');
+    if (!hasValue) return;
+    await navigator.clipboard.writeText(qrValue);
+    alert('Значение скопировано в буфер обмена!');
   };
 
-  // Загрузка рекламы (исправленная версия)
+  const resetAll = () => {
+    setTextValue('');
+    setUrlValue('');
+    setEmailValue('');
+    setEmailSubject('');
+    setEmailBody('');
+    setPhoneValue('');
+    setSmsNumber('');
+    setSmsMessage('');
+    setWifiConfig({ ssid: '', password: '', encryption: 'WPA' });
+    setFgColor('#000000');
+    setBgColor('#ffffff');
+  };
+
+  // Загрузка рекламы
   useEffect(() => {
-    // Если скрипт уже загружен — не загружаем повторно
     if (scriptLoaded.current) return;
     scriptLoaded.current = true;
 
-    // Инициализируем callback-массив
     window.yaContextCb = window.yaContextCb || [];
 
-    // Загружаем скрипт Яндекса
     const script = document.createElement('script');
     script.src = 'https://yandex.ru/ads/system/context.js';
     script.async = true;
     document.body.appendChild(script);
 
-    // Функция рендера рекламы
     const renderAd = () => {
       if (window.Ya?.Context?.AdvManager && adContainerRef.current) {
         try {
@@ -78,15 +147,12 @@ export default function QRGenerator() {
       }
     };
 
-    // Если Ya уже загружен — рендерим сразу
     if (window.Ya?.Context?.AdvManager) {
       renderAd();
     } else {
-      // Иначе добавляем в коллбек
       window.yaContextCb.push(renderAd);
     }
 
-    // Очистка при размонтировании
     return () => {
       if (adContainerRef.current) {
         adContainerRef.current.innerHTML = '';
@@ -94,166 +160,416 @@ export default function QRGenerator() {
     };
   }, []);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-950 to-zinc-900 text-white py-12 px-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-10">
-          <h1 className="text-5xl font-bold mb-3 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-            QR Code Generator
-          </h1>
-          <p className="text-zinc-400 text-lg">
-            Создавай стильные QR-коды бесплатно • Мгновенно 
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-8">
-          {/* Левая колонка — настройки */}
-          <div className="bg-zinc-900 rounded-3xl p-8 border border-zinc-800">
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  Текст или ссылка
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    placeholder="https://example.com или любой текст"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                  {value && (
-                    <button
-                      onClick={copyToClipboard}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-white"
-                    >
-                      <Copy size={20} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-2">Цвет QR-кода</label>
-                  <div className="flex items-center gap-3 bg-zinc-800 rounded-2xl p-2">
-                    <input
-                      type="color"
-                      value={fgColor}
-                      onChange={(e) => setFgColor(e.target.value)}
-                      className="w-12 h-12 rounded-xl overflow-hidden cursor-pointer"
-                    />
-                    <span className="font-mono text-sm">{fgColor}</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-2">Фон</label>
-                  <div className="flex items-center gap-3 bg-zinc-800 rounded-2xl p-2">
-                    <input
-                      type="color"
-                      value={bgColor}
-                      onChange={(e) => setBgColor(e.target.value)}
-                      className="w-12 h-12 rounded-xl overflow-hidden cursor-pointer"
-                    />
-                    <span className="font-mono text-sm">{bgColor}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-2">
-                  Размер: {size} px
-                </label>
-                <input
-                  type="range"
-                  min="180"
-                  max="420"
-                  step="10"
-                  value={size}
-                  onChange={(e) => setSize(Number(e.target.value))}
-                  className="w-full accent-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-zinc-400 mb-2">Уровень коррекции ошибок</label>
-                <div className="flex gap-2">
-                  {(['L', 'M', 'Q', 'H'] as const).map((level) => (
-                    <button
-                      key={level}
-                      onClick={() => setErrorLevel(level)}
-                      className={`flex-1 py-3 rounded-2xl text-sm font-medium transition-all ${
-                        errorLevel === level 
-                          ? 'bg-blue-600 text-white' 
-                          : 'bg-zinc-800 hover:bg-zinc-700'
-                      }`}
-                    >
-                      {level} {level === 'H' && '(лучше для логотипа)'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={() => {
-                  setValue('');
-                  setFgColor('#000000');
-                  setBgColor('#ffffff');
-                }}
-                className="w-full flex items-center justify-center gap-2 py-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors"
-              >
-                <RefreshCw size={18} />
-                Очистить всё
-              </button>
+  // Функция для рендера полей ввода в зависимости от типа
+  const renderInputFields = () => {
+    switch (dataType) {
+      case 'text':
+        return (
+          <div>
+            <label className="block text-sm font-medium text-zinc-400 mb-2">Текст</label>
+            <textarea
+              value={textValue}
+              onChange={(e) => setTextValue(e.target.value)}
+              placeholder="Введите любой текст..."
+              rows={3}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors resize-none"
+            />
+          </div>
+        );
+      case 'url':
+        return (
+          <div>
+            <label className="block text-sm font-medium text-zinc-400 mb-2">Ссылка (URL)</label>
+            <input
+              type="url"
+              value={urlValue}
+              onChange={(e) => setUrlValue(e.target.value)}
+              placeholder="https://example.com"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+        );
+      case 'email':
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-2">Email адрес</label>
+              <input
+                type="email"
+                value={emailValue}
+                onChange={(e) => setEmailValue(e.target.value)}
+                placeholder="example@mail.ru"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-2">Тема письма (необязательно)</label>
+              <input
+                type="text"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="Тема письма"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-3 text-base focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-2">Текст письма (необязательно)</label>
+              <textarea
+                value={emailBody}
+                onChange={(e) => setEmailBody(e.target.value)}
+                placeholder="Текст письма..."
+                rows={2}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-3 text-base focus:outline-none focus:border-blue-500 transition-colors resize-none"
+              />
             </div>
           </div>
-
-          {/* Правая колонка — предпросмотр QR */}
-          <div className="bg-zinc-900 rounded-3xl p-8 border border-zinc-800 flex flex-col">
-            <div className="flex-1 flex items-center justify-center bg-zinc-950 rounded-2xl p-8 min-h-[340px]" ref={qrRef}>
-              {value ? (
-                <div className="p-6 bg-white rounded-2xl shadow-2xl">
-                  <QRCodeSVG
-                    value={value}
-                    size={size}
-                    fgColor={fgColor}
-                    bgColor={bgColor}
-                    level={errorLevel}
-                    includeMargin={includeMargin}
-                  />
-                </div>
-              ) : (
-                <div className="text-center text-zinc-500">
-                  <Palette size={64} className="mx-auto mb-4 opacity-50" />
-                  <p className="text-xl">Введи текст или ссылку<br />и QR-код появится здесь</p>
-                </div>
-              )}
+        );
+      case 'phone':
+        return (
+          <div>
+            <label className="block text-sm font-medium text-zinc-400 mb-2">Номер телефона</label>
+            <input
+              type="tel"
+              value={phoneValue}
+              onChange={(e) => setPhoneValue(e.target.value)}
+              placeholder="+7 (999) 123-45-67"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
+        );
+      case 'sms':
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-2">Номер телефона</label>
+              <input
+                type="tel"
+                value={smsNumber}
+                onChange={(e) => setSmsNumber(e.target.value)}
+                placeholder="+7 (999) 123-45-67"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors"
+              />
             </div>
-
-            {value && (
-              <div className="mt-8 flex gap-4">
-                <button
-                  onClick={downloadSVG}
-                  className="flex-1 flex items-center justify-center gap-3 bg-white text-black font-semibold py-4 rounded-2xl hover:bg-zinc-200 transition-colors"
-                >
-                  <Download size={20} />
-                  Скачать SVG
-                </button>
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-2">Текст SMS (необязательно)</label>
+              <textarea
+                value={smsMessage}
+                onChange={(e) => setSmsMessage(e.target.value)}
+                placeholder="Текст сообщения..."
+                rows={2}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-3 text-base focus:outline-none focus:border-blue-500 transition-colors resize-none"
+              />
+            </div>
+          </div>
+        );
+      case 'wifi':
+        return (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-2">Название Wi-Fi (SSID)</label>
+              <input
+                type="text"
+                value={wifiConfig.ssid}
+                onChange={(e) => setWifiConfig({ ...wifiConfig, ssid: e.target.value })}
+                placeholder="MyWiFi"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-zinc-400 mb-2">Тип шифрования</label>
+              <select
+                value={wifiConfig.encryption}
+                onChange={(e) => setWifiConfig({ ...wifiConfig, encryption: e.target.value as any })}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors"
+              >
+                <option value="WPA">WPA/WPA2 (рекомендуется)</option>
+                <option value="WEP">WEP</option>
+                <option value="nopass">Без пароля</option>
+              </select>
+            </div>
+            {wifiConfig.encryption !== 'nopass' && (
+              <div>
+                <label className="block text-sm font-medium text-zinc-400 mb-2">Пароль Wi-Fi</label>
+                <input
+                  type="password"
+                  value={wifiConfig.password}
+                  onChange={(e) => setWifiConfig({ ...wifiConfig, password: e.target.value })}
+                  placeholder="Пароль от Wi-Fi"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl px-5 py-4 text-lg focus:outline-none focus:border-blue-500 transition-colors"
+                />
               </div>
             )}
           </div>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <>
+      {/* SEO-описание для поисковиков */}
+      <head>
+        <title>QR Code Generator — Создай QR-код бесплатно онлайн</title>
+        <meta name="description" content="Бесплатный генератор QR-кодов онлайн. Создавай QR-коды для ссылок, текста, email, телефона, SMS и Wi-Fi. Скачивай в формате SVG. Просто, быстро, без регистрации." />
+        <meta name="keywords" content="qr код, генератор qr кода, создать qr код, qr code generator, qr для wifi, qr для телефона" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta property="og:title" content="QR Code Generator — Бесплатный генератор QR-кодов" />
+        <meta property="og:description" content="Создавай QR-коды для любых целей: ссылки, текст, контакты, Wi-Fi. Мгновенно, бесплатно, качественно." />
+        <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="robots" content="index, follow" />
+      </head>
+
+      <div className="min-h-screen bg-gradient-to-br from-zinc-950 to-zinc-900 text-white">
+        {/* Основной контент */}
+        <div className="py-12 px-4">
+          <div className="max-w-6xl mx-auto">
+            {/* Шапка с SEO-текстом */}
+            <div className="text-center mb-12">
+              <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                QR Code Generator
+              </h1>
+              <p className="text-zinc-400 text-xl max-w-2xl mx-auto">
+                Создавай стильные QR-коды бесплатно • Мгновенно • Для любых целей
+              </p>
+            </div>
+
+            {/* Блок с преимуществами (контент для модерации) */}
+            <div className="grid md:grid-cols-4 gap-4 mb-12">
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 text-center">
+                <div className="text-blue-400 text-2xl mb-2">📱</div>
+                <h3 className="font-semibold text-sm">Для ссылок и текста</h3>
+                <p className="text-zinc-500 text-xs">Любые URL и заметки</p>
+              </div>
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 text-center">
+                <div className="text-blue-400 text-2xl mb-2">📧</div>
+                <h3 className="font-semibold text-sm">Email и телефон</h3>
+                <p className="text-zinc-500 text-xs">Быстрые контакты</p>
+              </div>
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 text-center">
+                <div className="text-blue-400 text-2xl mb-2">📨</div>
+                <h3 className="font-semibold text-sm">SMS сообщения</h3>
+                <p className="text-zinc-500 text-xs">Готовые шаблоны</p>
+              </div>
+              <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-4 text-center">
+                <div className="text-blue-400 text-2xl mb-2">📶</div>
+                <h3 className="font-semibold text-sm">Wi-Fi сети</h3>
+                <p className="text-zinc-500 text-xs">Подключение по QR</p>
+              </div>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* Левая колонка — настройки */}
+              <div className="bg-zinc-900 rounded-3xl p-6 border border-zinc-800">
+                <div className="space-y-5">
+                  {/* Выбор типа данных */}
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">Тип данных</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => setDataType('url')}
+                        className={`flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all ${
+                          dataType === 'url' ? 'bg-blue-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700'
+                        }`}
+                      >
+                        <Link2 size={16} /> Ссылка
+                      </button>
+                      <button
+                        onClick={() => setDataType('text')}
+                        className={`flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all ${
+                          dataType === 'text' ? 'bg-blue-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700'
+                        }`}
+                      >
+                        <Type size={16} /> Текст
+                      </button>
+                      <button
+                        onClick={() => setDataType('email')}
+                        className={`flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all ${
+                          dataType === 'email' ? 'bg-blue-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700'
+                        }`}
+                      >
+                        <Mail size={16} /> Email
+                      </button>
+                      <button
+                        onClick={() => setDataType('phone')}
+                        className={`flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all ${
+                          dataType === 'phone' ? 'bg-blue-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700'
+                        }`}
+                      >
+                        <Phone size={16} /> Телефон
+                      </button>
+                      <button
+                        onClick={() => setDataType('sms')}
+                        className={`flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all ${
+                          dataType === 'sms' ? 'bg-blue-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700'
+                        }`}
+                      >
+                        <MessageCircle size={16} /> SMS
+                      </button>
+                      <button
+                        onClick={() => setDataType('wifi')}
+                        className={`flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all ${
+                          dataType === 'wifi' ? 'bg-blue-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700'
+                        }`}
+                      >
+                        <Wifi size={16} /> Wi-Fi
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Поля ввода в зависимости от типа */}
+                  {renderInputFields()}
+
+                  {/* Настройки дизайна */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">Цвет QR-кода</label>
+                      <div className="flex items-center gap-3 bg-zinc-800 rounded-2xl p-2">
+                        <input
+                          type="color"
+                          value={fgColor}
+                          onChange={(e) => setFgColor(e.target.value)}
+                          className="w-12 h-12 rounded-xl overflow-hidden cursor-pointer"
+                        />
+                        <span className="font-mono text-sm">{fgColor}</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">Цвет фона</label>
+                      <div className="flex items-center gap-3 bg-zinc-800 rounded-2xl p-2">
+                        <input
+                          type="color"
+                          value={bgColor}
+                          onChange={(e) => setBgColor(e.target.value)}
+                          className="w-12 h-12 rounded-xl overflow-hidden cursor-pointer"
+                        />
+                        <span className="font-mono text-sm">{bgColor}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      Размер: {size} px
+                    </label>
+                    <input
+                      type="range"
+                      min="180"
+                      max="420"
+                      step="10"
+                      value={size}
+                      onChange={(e) => setSize(Number(e.target.value))}
+                      className="w-full accent-blue-500"
+                    />
+                  </div>
+
+                  <button
+                    onClick={resetAll}
+                    className="w-full flex items-center justify-center gap-2 py-4 bg-zinc-800 hover:bg-zinc-700 rounded-2xl transition-colors"
+                  >
+                    <RefreshCw size={18} />
+                    Сбросить всё
+                  </button>
+                </div>
+              </div>
+
+              {/* Правая колонка — предпросмотр QR */}
+              <div className="bg-zinc-900 rounded-3xl p-6 border border-zinc-800 flex flex-col">
+                <div className="flex-1 flex items-center justify-center bg-zinc-950 rounded-2xl p-8 min-h-[340px]" ref={qrRef}>
+                  {hasValue ? (
+                    <div className="p-6 bg-white rounded-2xl shadow-2xl">
+                      <QRCodeSVG
+                        value={qrValue}
+                        size={size}
+                        fgColor={fgColor}
+                        bgColor={bgColor}
+                        level={errorLevel}
+                        includeMargin={includeMargin}
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-center text-zinc-500">
+                      <Palette size={64} className="mx-auto mb-4 opacity-50" />
+                      <p className="text-xl">Заполните данные<br />и QR-код появится здесь</p>
+                    </div>
+                  )}
+                </div>
+
+                {hasValue && (
+                  <div className="mt-6 flex gap-4">
+                    <button
+                      onClick={downloadSVG}
+                      className="flex-1 flex items-center justify-center gap-3 bg-white text-black font-semibold py-4 rounded-2xl hover:bg-zinc-200 transition-colors"
+                    >
+                      <Download size={20} />
+                      Скачать SVG
+                    </button>
+                    <button
+                      onClick={copyToClipboard}
+                      className="flex-1 flex items-center justify-center gap-3 bg-zinc-800 font-semibold py-4 rounded-2xl hover:bg-zinc-700 transition-colors border border-zinc-700"
+                    >
+                      <Copy size={20} />
+                      Копировать
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Рекламный баннер */}
+            <div className="mt-12 bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 text-center">
+              <div 
+                ref={adContainerRef}
+                className="flex justify-center items-center min-h-[90px]"
+              />
+              <p className="text-zinc-500 text-xs mt-3">Реклама</p>
+            </div>
+          </div>
         </div>
 
-        {/* Рекламный баннер — исправленный */}
-        <div className="mt-12 bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 text-center">
-          <div 
-            ref={adContainerRef}
-            className="flex justify-center items-center min-h-[90px]"
-          />
-          <p className="text-zinc-500 text-xs mt-3">Реклама</p>
-        </div>
+        {/* Footer с информацией о QR-кодах */}
+        <footer className="border-t border-zinc-800 mt-8 py-12 px-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="grid md:grid-cols-3 gap-8">
+              <div>
+                <h3 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent mb-4">
+                  QR Code Generator
+                </h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                  Бесплатный инструмент для создания QR-кодов любых типов. Просто, быстро, без регистрации.
+                </p>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-white mb-3">Что такое QR-код?</h4>
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                  QR-код (Quick Response code) — это двумерный штрихкод, который содержит закодированную информацию. 
+                  Достаточно навести камеру смартфона на код, чтобы перейти по ссылке, увидеть текст, 
+                  добавить контакт или подключиться к Wi-Fi.
+                </p>
+              </div>
+
+              <div>
+                <h4 className="font-semibold text-white mb-3">Как использовать?</h4>
+                <ul className="text-zinc-400 text-sm space-y-2">
+                  <li>1. Выберите тип данных (ссылка, текст, email и т.д.)</li>
+                  <li>2. Заполните необходимые поля</li>
+                  <li>3. Настройте цвет и размер по желанию</li>
+                  <li>4. Скачайте QR-код в формате SVG</li>
+                  <li>5. Разместите код на сайте, визитке или рекламном материале</li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="border-t border-zinc-800 mt-8 pt-6 text-center text-zinc-500 text-xs">
+              <p>© {new Date().getFullYear()} QR Code Generator. Все права защищены.</p>
+              <p className="mt-1">Данный сайт использует рекламу для поддержания бесплатной работы сервиса.</p>
+            </div>
+          </div>
+        </footer>
       </div>
-    </div>
+    </>
   );
 }
